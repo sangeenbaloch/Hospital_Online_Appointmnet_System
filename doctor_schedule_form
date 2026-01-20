@@ -1,0 +1,188 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class DoctorScheduleForm extends StatefulWidget {
+  // If we pass these, it's an "Edit". If not, it's a "New Add" via Email.
+  final String? doctorId;
+  final String? doctorName;
+
+  const DoctorScheduleForm({super.key, this.doctorId, this.doctorName});
+
+  @override
+  State<DoctorScheduleForm> createState() => _DoctorScheduleFormState();
+}
+
+class _DoctorScheduleFormState extends State<DoctorScheduleForm> {
+  final supabase = Supabase.instance.client;
+  final _roomController = TextEditingController();
+
+  String selectedDay = 'Monday';
+  TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay endTime = const TimeOfDay(hour: 14, minute: 0);
+
+  bool _isLoading = false;
+
+  Future<void> _saveSchedule() async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Formatting the time strings for PostgreSQL compatibility (HH:MM:SS)
+      final String startStr =
+          "${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00";
+      final String endStr =
+          "${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00";
+
+      // 2. Database call using upsert
+      await supabase.from('doctor_schedules').upsert({
+        'doctor_id': widget.doctorId,
+        'day_of_week': selectedDay,
+        'start_time': startStr,
+        'end_time': endStr,
+        'room_no': _roomController.text.trim(),
+      }, onConflict: 'doctor_id,day_of_week');
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Schedule Saved Successfully!")),
+        );
+      }
+    } catch (e) {
+      debugPrint("Save Error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text("Database Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> weekDays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7F6),
+      appBar: AppBar(
+        title: Text("Set Schedule: ${widget.doctorName ?? 'New Schedule'}"),
+        backgroundColor: const Color(0xFF00796B),
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("1. Select Day",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: Color(0xFF00796B))),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: weekDays.map((day) => ChoiceChip(
+                        label: Text(day),
+                        selected: selectedDay == day,
+                        onSelected: (selected) =>
+                            setState(() => selectedDay = day),
+                        selectedColor: const Color(0xFF00796B),
+                        labelStyle: TextStyle(
+                            color: selectedDay == day
+                                ? Colors.white
+                                : Colors.black),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 25),
+            const Text("2. Set Working Hours",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, color: Color(0xFF00796B))),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(15)),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: Text("Start Time: ${startTime.format(context)}"),
+                    trailing:
+                        const Icon(Icons.access_time, color: Color(0xFF00796B)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                          context: context, initialTime: startTime);
+                      if (picked != null) setState(() => startTime = picked);
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    title: Text("End Time: ${endTime.format(context)}"),
+                    trailing:
+                        const Icon(Icons.access_time, color: Color(0xFF00796B)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                          context: context, initialTime: endTime);
+                      if (picked != null) setState(() => endTime = picked);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 25),
+            TextField(
+              controller: _roomController,
+              decoration: InputDecoration(
+                labelText: "Room / Clinic Number",
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: BorderSide.none),
+                prefixIcon:
+                    const Icon(Icons.meeting_room, color: Color(0xFF00796B)),
+              ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _saveSchedule,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00796B),
+                disabledBackgroundColor: Colors.grey.shade400,
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15)),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 24,
+                      width: 24,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  : const Text(
+                      "SAVE DOCTOR SCHEDULE",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
